@@ -1,0 +1,182 @@
+---
+title: "ML Assignment 4"
+author: "Dionna Attinson"
+date: "2/17/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(Amelia)
+library(caret)
+library(viridis)
+library(patchwork)
+library(modelr)
+library(mgcv)
+library(cluster)
+library(gridExtra)
+knitr::opts_chunk$set(
+	echo = TRUE,
+	warning = FALSE,
+	fig.width = 8, 
+  fig.height = 6,
+  out.width = "90%"
+)
+```
+
+### (Part I): Implementing a Simple Prediction Pipeline
+##### 1. Below I perform basic data cleaning and note which features are continuous, which are categorical and ensure they are being stored that way in the R dataset.
+```{r}
+Data = 
+  read.csv("./class4_p1.csv") %>% 
+  janitor::clean_names() %>% 
+  rename (PATCID = "x")
+```
+
+```{r}
+Data = 
+Data%>% 
+  mutate(
+  chronic1 = recode(chronic1, 
+                    "2" = "0", 
+                    "1" = "1"),
+  chronic3 = recode(chronic3, 
+                    "2" = "0",
+                    "1" = "1"),
+  chronic4 = recode(chronic4, 
+                    "2" = "0",
+                    "1" = "1"),
+  chronic1 = factor(chronic1, levels = c("0", "1")),
+  chronic3 = factor(chronic3, levels = c("0", "1")),
+  chronic4 = factor(chronic4, levels = c("0", "1")),
+  tobacco1 = recode(tobacco1, 
+                    "3" = "1",
+                    "2" = "2",
+                    "1" = "3"),
+  tobacco1 = factor(tobacco1, levels = c("1", "2", "3")),
+  alcohol1 = recode(alcohol1, 
+                    "3" = "1",
+                    "2" = "2",
+                    "1" = "3"),
+  alcohol1 = factor(alcohol1, levels = c("1", "2", "3")),
+  habits5 = recode(habits5, 
+                   "4" = "1",
+                   "3" = "2",
+                   "2" = "3",
+                   "1" = "4"),
+  habits5 = factor(habits5, levels = c("1", "2", "3", "4")),
+  habits7 = recode(habits7, 
+                   "5" = "1",
+                   "4" = "2",
+                   "3" = "3",
+                   "2" = "4",
+                   "1" = "5"),
+  habits7 = factor(habits7, levels = c("1", "2", "3", "4", "5")), 
+  agegroup = factor(agegroup, levels = c("1", "2", "3", "4")), 
+  dem3 = recode(dem3, 
+                    "2" = "0", 
+                    "1" = "1"),
+  dem3 = factor(dem3, levels = c("0", "1")),
+  dem4 = recode(dem4, 
+                    "2" = "0", 
+                    "1" = "1"),
+  dem4 = factor(dem4, levels = c("0", "1")),
+  dem8 = recode(dem8, 
+                    "2" = "0", 
+                    "1" = "1"),
+  dem8 = factor(dem8, levels = c("0", "1")), 
+  povertygroup = recode(povertygroup,
+                        "1" = "1",
+                        "2" = "2",
+                        "3" = "3", 
+                        "4" = "4",
+                        "5" = "5"),
+  povertygroup = factor(povertygroup, levels = c("1", "2", "3", "4", "5"))) %>% 
+  drop_na()
+  str(Data)
+```
+
+### Next, I created the test/training datasets with a 70:30 split
+```{r}
+set.seed(100)
+train.indices<-createDataPartition(y=Data$healthydays, p=0.7, list=FALSE)
+
+training <- Data[train.indices,]
+testing <- Data[-train.indices,]
+```
+
+### Next, I fit two prediction models using different subsets of the features in the training data. 
+```{r linear model}
+set.seed(100)
+model.1 <- lm(healthydays ~ chronic1 + chronic3 + chronic4 + povertygroup + bmi + agegroup + dem3 + dem4 + dem8, data=training)
+summary(model.1)
+
+model.2<-lm(healthydays ~  tobacco1 + alcohol1 + habits5 + habits7 + gpaq8totmin + gpaq11days + agegroup + bmi, data=training)
+summary(model.2)
+```
+### Using RMSE as a measure of fit, the first model is the preferred model of prediction. 
+* This model would be useful when trying to understand in a clinical setting how chronic disease could predict quality of life (healthy days).
+```{r}
+rmse(model.1, testing)
+rmse(model.2, testing)
+```
+## (Part II): Conducting an Unsupervised Analysis
+### Using the dataset from the Group assignment Part IIb (USArrests), we identify clusters using hierarchical analysis.
+```{r}
+library(devtools)
+library(ggbiplot)
+library(stats)
+library(factoextra)
+library(cluster)
+```
+### First, we loaded in the dataset, checked means and SDs to determine if scaling is necessary. However, scaling was not necessary.
+```{r}
+USArrestData = 
+USArrests %>% 
+drop_na()
+
+colMeans(USArrestData, na.rm=TRUE)
+apply(USArrestData, 2, sd, na.rm=TRUE)
+```
+### Hierarchical Clustering: Agglomeration Method
+I used Euclidean distance for the dissimilarity matrix and completed 3 difference agglomeration methods: complete, average, and single. 
+#### Complete Agglomeration Method 
+For each pair of clusters, the algorithm computes and merges them to minimize the maximum distance between the clusters (in other words, the distance of the farthest elements). It tends to produce more compact clusters.
+```{r}
+# Create Dissimilarity matrix
+diss.matrix <- dist(USArrests, method = "euclidean")
+# Hierarchical clustering using Complete Linkage
+hc_complete <- hclust(diss.matrix, method = "complete")
+# Plot the obtained dendrogram
+plot(hc_complete, cex = 0.6, hang = -1)
+```
+#### Average Agglomeration Method
+It’s similar to complete linkage, but in this case, the algorithm uses the average distance between the pairs of clusters
+```{r average}
+# Hierarchical clustering using Average Linkage
+hc_average <- hclust(diss.matrix, method = "average")
+# Plot the obtained dendrogram
+plot(hc_average, cex = 0.6, hang = -1)
+```
+
+#### Single Agglomeration Method
+It computes all pairwise dissimilarities between the elements in cluster 1 and the elements in cluster 2, and considers the smallest of these dissimilarities as a linkage criterion. It tends to produce long, “loose” clusters.
+```{r single}
+# Hierarchical clustering using Single Linkage
+hc_single <- hclust(diss.matrix, method = "single")
+# Plot the obtained dendrogram
+plot(hc_single, cex = 0.6, hang = -1)
+```
+
+#### Difference Between Dendrograms
+It is noticeable to mention that the single agglomeration method produced the most clusters, while the average and complete agglomeration methods produced less and more compact clusters. 
+
+#### Using the gap clusters below, we see that 4 is the optimal number of clusters.
+
+```{r}
+clusGap(USArrests, FUN = hcut, nstart = 25, K.max = 10, B = 50) %>% 
+fviz_gap_stat()
+```
+
+#### Below, I describe one research question that can be addressed using the newly identified clusters.
+What states should be prioritized to receive a community-based violence prevention intervention based on their rates of murder, assault, and rape. 
